@@ -1,0 +1,44 @@
+Vagrant.configure("2") do |config|
+    config.vm.box = "ubuntu/focal64"  # Base box for all VMs
+
+    # VM 1
+    config.vm.define "vm1" do |vm1|
+      vm1.vm.hostname = "vm1"
+      vm1.vm.network "private_network", ip: "192.168.56.51"
+
+      vm1.vm.provider "virtualbox" do |vb|
+        vb.memory = "2048"  # Memory in MB
+        vb.cpus = 1         # Number of CPUs
+      end
+      vm1.vm.provision "shell", inline: <<-SHELL
+        sudo apt update && apt upgrade -y
+      SHELL
+    end
+
+    # VM 2
+    config.vm.define "vm2" do |vm2|
+      vm2.vm.hostname = "vm2"
+      vm2.vm.network "private_network", ip: "192.168.56.52"
+      vm2.vm.provider "virtualbox" do |vb|
+        vb.memory = "2048"  # Memory in MB
+        vb.cpus = 1         # Number of CPUs
+      end
+      vm2.vm.provision "shell", inline: <<-SHELL
+        sudo apt update && apt upgrade -y
+      SHELL
+    end
+
+    # VM 3
+    config.vm.define "vm3" do |vm3|
+      vm3.vm.hostname = "vm3"
+      vm3.vm.network "private_network", ip: "192.168.56.53"
+      vm3.vm.provider "virtualbox" do |vb|
+        vb.memory = "2048"  # Memory in MB
+        vb.cpus = 1         # Number of CPUs
+      end
+      vm3.vm.provision "shell", inline: <<-SHELL
+        sudo apt update && apt upgrade -y
+      SHELL
+    end
+  end
+

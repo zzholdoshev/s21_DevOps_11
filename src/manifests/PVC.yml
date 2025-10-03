@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  namespace: nginx-ingress
+  name: postgres-pvc  # This is the name we will reference in the Deployment
+spec:
+  accessModes:
+    - ReadWriteOnce  
+  storageClassName: local-path  
+  resources:
+    requests:
+      storage: 1Gi  
+

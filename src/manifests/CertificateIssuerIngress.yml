@@ -1,0 +1,98 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: my-selfsigned-ca
+  namespace: nginx-ingress
+spec:
+  isCA: true
+  commonName: my-selfsigned-ca
+  secretName: root-secret
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+  issuerRef:
+    name: selfsigned-issuer
+    kind: ClusterIssuer
+    group: cert-manager.io
+  dnsNames:
+    - "devops11.local"
+    - "*.devops11.local"
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: my-ca-issuer
+  namespace: nginx-ingress
+spec:
+  ca:
+    secretName: root-secret
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress
+  namespace: nginx-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - "devops11.local"
+    secretName: root-secret
+  rules:
+  - host: "devops11.local"
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: session-service  
+            port:
+              number: 8081
+      - path: /api/v1/auth
+        pathType: Prefix
+        backend:
+          service:
+            name: session-service
+            port:
+              number: 8081
+      - path: /api/v1/gateway
+        pathType: Prefix
+        backend:
+          service:
+            name: gateway-service
+            port:
+              number: 8087
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-svc
+  namespace: nginx-ingress
+  labels:
+    app.kubernetes.io/name: nginx-ingress
+spec:
+  type: NodePort
+  ports:
+  - name: https-session
+    port: 443
+    protocol: TCP
+    targetPort: 443
+    nodePort: 30081  # Optional: specify a port (30000-32767)
+  - name: http-session
+    port: 80
+    protocol: TCP
+    targetPort: 80
+    nodePort: 30080 # Optional: specify a port (30000-32767)
+
+  selector:
+    app: nginx-ingress

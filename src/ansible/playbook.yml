@@ -1,0 +1,89 @@
+---
+- name: Install and configure k3s
+  hosts: k3s_master
+  become: true
+  vars:
+    master_ip: 192.168.56.51
+  tasks:
+    - name: Install k3s on master
+      shell: |
+        curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server --node-ip={{ master_ip }} --advertise-address={{ master_ip }} --disable traefik --flannel-iface=enp0s8" sh -
+
+    - name: Get k3s token
+      tags: workers
+      command: cat /var/lib/rancher/k3s/server/node-token
+      register: k3s_token
+
+    - name: install nginx ingress controller
+      tags: nginx
+      shell: |
+        git clone https://github.com/nginx/kubernetes-ingress.git --branch v5.2.0 
+        cd kubernetes-ingress 
+        kubectl apply -f deployments/common/ns-and-sa.yaml 
+        kubectl apply -f deployments/rbac/rbac.yaml 
+        kubectl apply -f deployments/common/nginx-config.yaml 
+        kubectl apply -f deployments/common/ingress-class.yaml 
+        kubectl apply -f https://raw.githubusercontent.com/nginx/kubernetes-ingress/v5.2.0/deploy/crds.yaml
+        kubectl apply -f deployments/deployment/nginx-ingress.yaml
+
+    - name: install cert manager
+      tags: cert_manager
+      shell: |
+        kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.18.2/cert-manager.yaml
+
+    - name: Wait for 2 minutes # wait for the webhook pod to initialize
+      ansible.builtin.pause:
+        seconds: 120  # 2 minutes in seconds
+
+    - name: install cluster issuer and certificate
+      tags: cert
+      shell: |
+        kubectl apply -f /vagrant/manifests/CertificateIssuerIngress.yml
+
+    - name: create pvc
+      tags: pvc
+      shell: |
+        kubectl apply -f /vagrant/manifests/PVC.yml
+
+    - name: Install prerequisite packages
+      apt:
+        name:
+          - docker.io
+          - jq
+        state: present
+    - name: install prometheus operator
+      shell: |
+        curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"  | bash
+        #installing prometheus operator using kustomize
+        cp /home/vagrant/kustomize /usr/bin/
+        kubectl create namespace monitoring
+        NAMESPACE=my_namespace
+        TMPDIR=$(mktemp -d)
+        LATEST=$(curl -s https://api.github.com/repos/prometheus-operator/prometheus-operator/releases/latest | jq -cr .tag_name)
+        curl -s "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/refs/tags/$LATEST/kustomization.yaml" > "$TMPDIR/kustomization.yaml"
+        curl -s "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/refs/tags/$LATEST/bundle.yaml" > "$TMPDIR/bundle.yaml"
+        (cd $TMPDIR && kustomize edit set namespace $NAMESPACE) && kubectl create -k "$TMPDIR"
+
+- name: Join worker nodes to k3s cluster
+  hosts: k3s_workers
+  gather_facts: true
+  tags: workers
+  become: true
+  tasks:
+    - name: Install k3s on worker nodes
+      shell: |
+        curl -sfL https://get.k3s.io | K3S_URL=https://192.168.56.51:6443 K3S_TOKEN={{ hostvars['master'].k3s_token.stdout }} sh -s - agent --node-ip={{ hostvars[inventory_hostname].ansible_host }} --flannel-iface=enp0s8
+
+- name: building images and running web app from deployment
+  hosts: k3s_master
+  tags: deploy
+  become: true
+  tasks:
+    - name: apply secret & configmap for the app
+      shell: |
+        kubectl apply -f /vagrant/manifests/secret.yml
+        kubectl apply -f /vagrant/manifests/configmap.yml
+    - name: building and running
+      shell: |
+        sudo mkdir /data/postgres
+        kubectl apply -f /vagrant/manifests/deploy.yml
